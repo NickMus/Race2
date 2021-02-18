@@ -9,9 +9,14 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class MainClass {
     public static final int CARS_COUNT = 4;
-    static CyclicBarrier cb = new CyclicBarrier(CARS_COUNT);
+    static CyclicBarrier cb = new CyclicBarrier(CARS_COUNT, new Runnable() {
+        @Override
+        public void run() {
+            System.out.println("ВАЖНОЕ ОБЪЯВЛЕНИЕ >>> Гонка началась!!!");
+        }
+    });
     static CountDownLatch cdl = new CountDownLatch(CARS_COUNT);
-
+public static volatile String winner;
 
     public static void main(String[] args) {
         System.out.println("ВАЖНОЕ ОБЪЯВЛЕНИЕ >>> Подготовка!!!");
@@ -26,7 +31,7 @@ public class MainClass {
             for (int i = 0; i < CARS_COUNT; i++) {
                 new Thread(cars[i]).start();
             }
-            System.out.println("ВАЖНОЕ ОБЪЯВЛЕНИЕ >>> Гонка началась!!!");
+
 
 
 
@@ -38,7 +43,7 @@ public class MainClass {
 
 
         System.out.println("ВАЖНОЕ ОБЪЯВЛЕНИЕ >>> Гонка закончилась!!!");
-
+        System.out.println("Победитель " + winner);
     }
 }
 
@@ -92,6 +97,15 @@ class Car implements Runnable {
 
         for (int y = 0; y < race.getStages().size(); y++) {
             race.getStages().get(y).go(this);
+        }
+        String localWinner = MainClass.winner;
+        if(localWinner == null) {
+            synchronized (MainClass.class) {
+                localWinner = MainClass.winner;
+                if (localWinner == null) {
+                    MainClass.winner = this.name;
+                }
+            }
         }
         cdl.countDown();
     }
