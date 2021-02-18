@@ -1,26 +1,49 @@
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.concurrent.BrokenBarrierException;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class MainClass {
     public static final int CARS_COUNT = 4;
+    static CyclicBarrier cb = new CyclicBarrier(CARS_COUNT, new Runnable() {
+        @Override
+        public void run() {
+            System.out.println("ВАЖНОЕ ОБЪЯВЛЕНИЕ >>> Гонка началась!!!");
+        }
+    });
+    static CountDownLatch cdl = new CountDownLatch(CARS_COUNT);
+public static volatile String winner;
 
     public static void main(String[] args) {
         System.out.println("ВАЖНОЕ ОБЪЯВЛЕНИЕ >>> Подготовка!!!");
         Race race = new Race(new Road(60), new Tunnel(), new Road(40));
         Car[] cars = new Car[CARS_COUNT];
-        for (int i = 0; i < cars.length; i++) {
-            cars[i] = new Car(race, 20 + (int) (Math.random() * 10));
-        }
-        for (int i = 0; i < cars.length; i++) {
-            new Thread(cars[i]).start();
 
+        for (int i = 0; i < CARS_COUNT; i++) {
+            cars[i] = new Car(race, 20 + (int) (Math.random() * 10), cb, cdl);
         }
 
-        System.out.println("ВАЖНОЕ ОБЪЯВЛЕНИЕ >>> Гонка началась!!!");
+
+            for (int i = 0; i < CARS_COUNT; i++) {
+                new Thread(cars[i]).start();
+            }
+
+
+
+
+        try {
+            cdl.await();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+
         System.out.println("ВАЖНОЕ ОБЪЯВЛЕНИЕ >>> Гонка закончилась!!!");
+        System.out.println("Победитель " + winner);
     }
 }
 
@@ -30,10 +53,13 @@ class Car implements Runnable {
     static {
         CARS_COUNT = 0;
     }
-    CyclicBarrier cb = new CyclicBarrier(CARS_COUNT);
+
     private Race race;
     private int speed;
     private String name;
+    private CyclicBarrier cb;
+    private CountDownLatch cdl;
+
 
     public String getName() {
         return name;
@@ -43,33 +69,45 @@ class Car implements Runnable {
         return speed;
     }
 
-    public Car(Race race, int speed) {
+
+    public Car(Race race, int speed, CyclicBarrier cb, CountDownLatch cdl) {
         this.race = race;
         this.speed = speed;
+        this.cb = cb;
+        this.cdl = cdl;
         CARS_COUNT++;
         this.name = "Участник #" + CARS_COUNT;
 
     }
 
+
     @Override
 
     public void run() {
 
+        try {
+            System.out.println(this.name + " готовится");
+            Thread.sleep(500 + (int) (Math.random() * 800));
+            System.out.println(this.name + " готов");
+            cb.await();
 
-            try {
-                System.out.println(this.name + " готовится");
-                Thread.sleep(500 + (int) (Math.random() * 800));
-                System.out.println(this.name + " готов");
-                cb.await();
-                for (int y = 0; y < race.getStages().size(); y++) {
-                    race.getStages().get(y).go(this);
+        } catch (InterruptedException | BrokenBarrierException e) {
+            e.printStackTrace();
+        }
+
+        for (int y = 0; y < race.getStages().size(); y++) {
+            race.getStages().get(y).go(this);
+        }
+        String localWinner = MainClass.winner;
+        if(localWinner == null) {
+            synchronized (MainClass.class) {
+                localWinner = MainClass.winner;
+                if (localWinner == null) {
+                    MainClass.winner = this.name;
                 }
-            } catch (InterruptedException | BrokenBarrierException e) {
-                e.printStackTrace();
             }
-
-
-
+        }
+        cdl.countDown();
     }
 
 }
@@ -110,11 +148,13 @@ class Tunnel extends Stage {
         this.description = "Тоннель " + length + " метров";
     }
 
-    Semaphore smp = new Semaphore(Car.CARS_COUNT / 2);
+    Semaphore smp = new Semaphore(MainClass.CARS_COUNT / 2);
 
     @Override
     public void go(Car c) {
         try {
+
+
             try {
                 System.out.println(c.getName() + " готовится к этапу(ждет): " + description);
                 smp.acquire();
